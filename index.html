@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>图片字幕生成器</title>
+<style>
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: #fff; }
+  body {
+    color: #222;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+                 "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 21px; font-weight: 700; text-align: left; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 8px 16px; border: 0; border-radius: 4px;
+    background: #4CAF50; color: #fff; font-size: 14px; line-height: 1.2;
+    font-family: inherit; cursor: pointer; user-select: none;
+  }
+  .btn:hover:not(:disabled) { background: #43a047; }
+  .btn:disabled { background: #b7d9b8; cursor: not-allowed; }
+  .file-btn { position: relative; }
+  .file-btn input[type="file"] {
+    position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+  }
+  .filename {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: #555;
+  }
+  .params { gap: 12px 16px; }
+  .field { display: inline-flex; align-items: center; gap: 6px; }
+  .field input[type="number"] {
+    width: 72px; padding: 5px 6px; border: 1px solid #ddd; border-radius: 4px;
+    background: #fff; font: inherit; color: #222;
+  }
+  .field input[type="color"] {
+    width: 48px; height: 30px; padding: 1px; border: 1px solid #ddd; border-radius: 4px;
+    background: #fff; cursor: pointer;
+  }
+  .font-field { position: relative; }
+  .combo { position: relative; display: inline-flex; }
+  #fontInput {
+    width: 168px; padding: 5px 22px 5px 8px; border: 1px solid #ddd; border-radius: 4px;
+    background: #fff; font: inherit; color: #222;
+  }
+  .combo::after {
+    content: '▾'; position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+    color: #999; font-size: 11px; pointer-events: none;
+  }
+  .font-list {
+    position: absolute; z-index: 20; top: calc(100% + 2px); left: 0; width: 240px;
+    max-height: 248px; overflow-y: auto; margin: 0; padding: 2px 0; list-style: none;
+    background: #fff; border: 1px solid #ddd; border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+  .font-list li {
+    padding: 6px 10px; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .font-list li:hover, .font-list li.active { background: #eef7ee; }
+  .font-list li.empty { color: #999; cursor: text; background: none; white-space: normal; }
+  #textInput {
+    display: block; width: 100%; margin: 0 0 12px; padding: 8px 10px;
+    border: 1px solid #ddd; border-radius: 4px; background: #fff;
+    font: inherit; color: #222; resize: vertical; min-height: 92px;
+  }
+  .hint { margin: -4px 0 12px; color: #666; font-size: 13px; word-break: break-all; }
+  .hint:empty { display: none; }
+  .preview { margin-top: 12px; }
+  #canvas { display: block; width: 100%; height: auto; border: 0; }
+  #placeholder {
+    color: #8a8a8a; font-size: 13px; text-align: center;
+    padding: 28px 0; background: #fafafa; border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>图片字幕生成器</h1>
+
+  <div class="row">
+    <label class="btn file-btn" for="fileInput">选择文件
+      <input type="file" id="fileInput" accept="image/*">
+    </label>
+    <span class="filename" id="fileName">未选择文件</span>
+  </div>
+
+  <div class="row params" style="position: relative;">
+    <label class="field">字幕高度(px) <input type="number" id="rowHeight" value="40" min="10" step="1"></label>
+    <label class="field">字体大小(px) <input type="number" id="fontSize" value="20" min="8" step="1"></label>
+    <div class="field font-field" id="fontField">
+      <span>字体</span>
+      <div class="combo">
+        <input type="text" id="fontInput" value="微软雅黑" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="false" aria-controls="fontList">
+        <ul class="font-list" id="fontList" role="listbox" hidden></ul>
+      </div>
+    </div>
+    <label class="field">字体颜色 <input type="color" id="fontColor" value="#FFFFFF"></label>
+    <label class="field">轮廓颜色 <input type="color" id="outlineColor" value="#000000"></label>
+  </div>
+
+  <textarea id="textInput" rows="5" placeholder="每行一条字幕">这样
+不管说什么
+都像名人名言</textarea>
+
+  <div class="row">
+    <button type="button" class="btn" id="generateBtn" disabled="">生成字幕图片</button>
+    <button type="button" class="btn" id="saveBtn" disabled="">保存图片</button>
+  </div>
+
+  <div class="hint" id="hint"></div>
+
+  <div class="preview">
+    <div id="placeholder">待生成</div>
+    <canvas id="canvas" hidden="" width="0" height="0"></canvas>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var DEFAULT_HEIGHT = 40;
+  var DEFAULT_FONT_SIZE = 20;
+  var MIN_HEIGHT = 10;
+  var MIN_FONT_SIZE = 8;
+  var DARK_LAYER = 'rgba(0, 0, 0, 0.45)';        // 背景条固定压暗一次，不提供滑块
+  var DIVIDER_COLOR = 'rgba(255, 255, 255, 0.35)';
+
+  // 字体依赖访客系统字体，缺失时按回退栈逐级降级；这里不引入任何在线 Web 字体，
+  // 避免部署到国内网络环境时字体加载失败导致出图异常。
+  var FONT_CHOICES = [
+    {
+      name: '系统默认（无衬线）',
+      stack: '"Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif',
+      keys: '系统默认 默认 default sans-serif system 无衬线'
+    },
+    {
+      name: '微软雅黑',
+      stack: '"Microsoft YaHei", "微软雅黑", "PingFang SC", sans-serif',
+      keys: '微软雅黑 msyh microsoft yahei yahei'
+    },
+    {
+      name: '苹方',
+      stack: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+      keys: '苹方 pingfang pingfang sc 苹果'
+    },
+    {
+      name: '思源黑体',
+      stack: '"Source Han Sans SC", "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif',
+      keys: '思源黑体 source han sans noto sans noto sans sc noto sans cjk noto'
+    },
+    {
+      name: '思源宋体',
+      stack: '"Source Han Serif SC", "Noto Serif SC", SimSun, serif',
+      keys: '思源宋体 source han serif noto serif noto serif sc'
+    },
+    {
+      name: '黑体',
+      stack: 'SimHei, "Microsoft YaHei", sans-serif',
+      keys: '黑体 simhei heiti'
+    },
+    {
+      name: '宋体',
+      stack: 'SimSun, "Songti SC", "Source Han Serif SC", serif',
+      keys: '宋体 simsun songti songti sc'
+    },
+    {
+      name: '楷体',
+      stack: 'KaiTi, "Kaiti SC", STKaiti, serif',
+      keys: '楷体 kaiti kaiti sc stkaiti'
+    },
+    {
+      name: '仿宋',
+      stack: 'FangSong, "FangSong SC", STFangsong, serif',
+      keys: '仿宋 fangsong fangsong sc stfangsong'
+    },
+    {
+      name: '等线',
+      stack: 'DengXian, "DengXian Light", "Microsoft YaHei", sans-serif',
+      keys: '等线 dengxian'
+    },
+    {
+      name: '华文黑体',
+      stack: 'STHeiti, "Heiti SC", "Microsoft YaHei", sans-serif',
+      keys: '华文黑体 华文 stheiti heiti sc'
+    },
+    {
+      name: '冬青黑体',
+      stack: '"Hiragino Sans GB", "Hiragino Sans", "PingFang SC", sans-serif',
+      keys: '冬青黑体 冬青 hiragino hiragino sans'
+    },
+    {
+      name: '幼圆',
+      stack: 'YouYuan, "Yuanti SC", "Microsoft YaHei", sans-serif',
+      keys: '幼圆 youyuan yuanti 圆体'
+    },
+    {
+      name: 'HarmonyOS Sans',
+      stack: '"HarmonyOS Sans SC", "HarmonyOS Sans", "Microsoft YaHei", sans-serif',
+      keys: 'harmonyos harmonyos sans 鸿蒙 鸿蒙黑体'
+    },
+    {
+      name: '霞鹜文楷',
+      stack: '"LXGW WenKai", "LXGW WenKai TC", KaiTi, serif',
+      keys: '霞鹜文楷 霞鹜 lxgw lxgw wenkai wenkai'
+    },
+    {
+      name: 'Arial',
+      stack: 'Arial, Helvetica, "Nimbus Sans", sans-serif',
+      keys: 'arial helvetica 无衬线英文'
+    },
+    {
+      name: 'Times New Roman',
+      stack: '"Times New Roman", Times, "Nimbus Roman", serif',
+      keys: 'times new roman times 新罗马'
+    },
+    {
+      name: 'Georgia',
+      stack: 'Georgia, "Nimbus Roman", "Times New Roman", serif',
+      keys: 'georgia'
+    },
+    {
+      name: 'Courier New',
+      stack: '"Courier New", Courier, monospace',
+      keys: 'courier new courier 等宽'
+    },
+    {
+      name: 'Consolas',
+      stack: 'Consolas, "Courier New", monospace',
+      keys: 'consolas 等宽'
+    }
+  ];
+
+  var els = {
+    fileInput: document.getElementById('fileInput'),
+    fileName: document.getElementById('fileName'),
+    rowHeight: document.getElementById('rowHeight'),
+    fontSize: document.getElementById('fontSize'),
+    fontField: document.getElementById('fontField'),
+    fontInput: document.getElementById('fontInput'),
+    fontList: document.getElementById('fontList'),
+    fontColor: document.getElementById('fontColor'),
+    outlineColor: document.getElementById('outlineColor'),
+    text: document.getElementById('textInput'),
+    generate: document.getElementById('generateBtn'),
+    save: document.getElementById('saveBtn'),
+    hint: document.getElementById('hint'),
+    placeholder: document.getElementById('placeholder'),
+    canvas: document.getElementById('canvas')
+  };
+  var ctx = els.canvas.getContext('2d');
+
+  var image = null;      // 已加载的原图（原像素尺寸）
+  var imageUrl = null;   // 图片 Object URL，换图时释放
+  var imageName = '';    // 原始文件名，用于导出命名
+  var hasResult = false; // 预览中是否已有生成结果
+  var stale = false;     // 生成后改参数/改文本 => 结果过期，保存按钮禁用
+
+  // 当前生效的字体：候选字体或用户手输的自定义 font-family（默认微软雅黑）
+  var currentFont = { name: FONT_CHOICES[1].name, stack: FONT_CHOICES[1].stack };
+  var visibleFonts = []; // 下拉里当前可见的候选项
+  var activeIndex = -1;  // 键盘高亮项
+
+  function setHint(msg) {
+    els.hint.textContent = msg || '';
+  }
+
+  function updateButtons() {
+    els.generate.disabled = !image || getLines().length === 0;
+    els.save.disabled = !hasResult || stale;
+  }
+
+  function getLines() {
+    return els.text.value.split(/\r?\n/)
+      .map(function (s) { return s.trim(); })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  // 非法/空值回退到默认值（不做静默修正）
+  function readInt(input, fallback, min) {
+    var raw = input.value.trim();
+    var v = Number(raw);
+    if (raw === '' || !isFinite(v) || v < min) return fallback;
+    return Math.round(v);
+  }
+
+  function resetResult() {
+    hasResult = false;
+    stale = false;
+    els.canvas.hidden = true;
+    els.canvas.width = 0;   // 释放上一张预览位图
+    els.canvas.height = 0;
+    els.placeholder.hidden = false;
+    els.placeholder.textContent = '待生成';
+    setHint('');
+    updateButtons();
+  }
+
+  function releaseImage() {
+    if (imageUrl) {
+      URL.revokeObjectURL(imageUrl);
+      imageUrl = null;
+    }
+    if (image) {
+      image.onload = null;
+      image.onerror = null;
+      image = null;
+    }
+  }
+
+  // 单行过长时：先自动缩小字号（最小 8px）；仍放不下则截断并追加省略号
+  // 宽度测量使用当前选中的字体栈，因此换字体后缩字号的判定会随之变化
+  function fitText(text, baseSize, maxWidth, fontStack) {
+    var size = baseSize;
+    while (size > MIN_FONT_SIZE) {
+      ctx.font = size + 'px ' + fontStack;
+      if (ctx.measureText(text).width <= maxWidth) {
+        return { text: text, size: size };
+      }
+      size -= 1;
+    }
+    ctx.font = MIN_FONT_SIZE + 'px ' + fontStack;
+    if (ctx.measureText(text).width <= maxWidth) {
+      return { text: text, size: MIN_FONT_SIZE };
+    }
+    var clipped = text;
+    while (clipped.length > 0 && ctx.measureText(clipped + '…').width > maxWidth) {
+      clipped = clipped.slice(0, -1);
+    }
+    return { text: clipped ? clipped + '…' : '…', size: MIN_FONT_SIZE };
+  }
+
+  // ---------- 字体下拉 + 搜索 ----------
+
+  // 大小写不敏感的子串匹配，中文名与英文名（keys 里的别名）都参与
+  function matchFonts(query) {
+    var q = String(query || '').trim().toLowerCase();
+    if (!q) return FONT_CHOICES.slice();
+    return FONT_CHOICES.filter(function (font) {
+      return (font.name + ' ' + font.keys).toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  function closeFontList() {
+    els.fontList.hidden = true;
+    els.fontList.textContent = '';
+    els.fontInput.setAttribute('aria-expanded', 'false');
+    activeIndex = -1;
+  }
+
+  function highlightFont(index) {
+    var items = els.fontList.querySelectorAll('li[data-font]');
+    if (!items.length) return;
+    if (index < 0) index = items.length - 1;
+    if (index >= items.length) index = 0;
+    activeIndex = index;
+    for (var i = 0; i < items.length; i++) {
+      items[i].className = (i === index) ? 'active' : '';
+    }
+    items[index].scrollIntoView({ block: 'nearest' });
+  }
+
+  function renderFontList(query) {
+    visibleFonts = matchFonts(query);
+    var frag = document.createDocumentFragment();
+    if (!visibleFonts.length) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = '无匹配字体，可直接输入字体名使用';
+      frag.appendChild(empty);
+      activeIndex = -1;
+    } else {
+      visibleFonts.forEach(function (font, i) {
+        var li = document.createElement('li');
+        li.textContent = font.name;
+        li.title = font.stack;
+        li.setAttribute('role', 'option');
+        li.setAttribute('data-font', String(i));
+        if (i === 0) li.className = 'active';
+        // mousedown 阻止默认行为，避免输入框先失焦导致列表先关闭
+        li.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        li.addEventListener('click', function () { commitFont(font); });
+        frag.appendChild(li);
+      });
+      activeIndex = 0;
+    }
+    els.fontList.textContent = '';
+    els.fontList.appendChild(frag);
+    els.fontList.hidden = false;
+    els.fontInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function commitFont(font) {
+    var changed = font.name !== currentFont.name || font.stack !== currentFont.stack;
+    currentFont = { name: font.name, stack: font.stack };
+    els.fontInput.value = font.name;
+    closeFontList();
+    // 与既有参数改动一致：字体变化同样使结果过期并禁用保存
+    if (changed) markStale();
+    updateButtons();
+  }
+
+  // 自定义字体名：直接当作 font-family 使用；若输入里有逗号则视为用户自己写了回退栈
+  function commitCustomFont(raw) {
+    var text = String(raw || '').trim();
+    if (!text) {
+      els.fontInput.value = currentFont.name;
+      closeFontList();
+      return;
+    }
+    var exact = FONT_CHOICES.filter(function (font) {
+      return font.name.toLowerCase() === text.toLowerCase();
+    })[0];
+    if (exact) {
+      commitFont(exact);
+      return;
+    }
+    var stack = text.indexOf(',') >= 0 ? text : '"' + text.replace(/"/g, '') + '", sans-serif';
+    commitFont({ name: text, stack: stack });
+  }
+
+  // 先等系统字体就绪；超时也不阻塞出图，未就绪的字体由浏览器按回退栈渲染
+  function waitFontReady() {
+    if (!document.fonts || !document.fonts.ready) return Promise.resolve();
+    return Promise.race([
+      document.fonts.ready.catch(function () {}),
+      new Promise(function (resolve) { setTimeout(resolve, 400); })
+    ]);
+  }
+
+  function outputName() {
+    var name = imageName || '图片';
+    var dot = name.lastIndexOf('.');
+    var base = dot > 0 ? name.slice(0, dot) : name;
+    return base + '_字幕.png';
+  }
+
+  async function generate() {
+    if (!image) {
+      setHint('请先选择一张图片。');
+      updateButtons();
+      return;
+    }
+    var lines = getLines();
+    if (lines.length === 0) {
+      setHint('请输入字幕文本，每行一条字幕。');
+      updateButtons();
+      return;
+    }
+
+    var img = image;
+    var w = img.naturalWidth;
+    var h = img.naturalHeight;
+    var notes = [];
+
+    var rowHeight = readInt(els.rowHeight, DEFAULT_HEIGHT, MIN_HEIGHT);
+    var fontSize = readInt(els.fontSize, DEFAULT_FONT_SIZE, MIN_FONT_SIZE);
+    var fontColor = els.fontColor.value || '#FFFFFF';
+    var outlineColor = els.outlineColor.value || '#000000';
+
+    // 绘制前先等系统字体就绪；超时或字体缺失都继续出图，由回退栈兜底
+    await waitFontReady();
+    if (img !== image) return; // 等待期间换了图，本次结果作废
+    var fontStack = currentFont.stack;
+
+    // 行数超过图片高度可容纳的上限（每行至少 MIN_HEIGHT）时，只保留最后能放下的若干行
+    var maxRows = Math.floor(h / MIN_HEIGHT);
+    if (maxRows < 1) {
+      setHint('图片高度不足 ' + MIN_HEIGHT + 'px，无法生成字幕。');
+      return;
+    }
+    if (lines.length > maxRows) {
+      notes.push('图片高度仅 ' + h + 'px，最多容纳 ' + maxRows + ' 行，已只保留最后 ' + maxRows + ' 行。');
+      lines = lines.slice(lines.length - maxRows);
+    }
+
+    // n*H 超过图片高度时向下收缩行高，保证字幕条完全落在图片内，底部不出现透明区域
+    if (lines.length * rowHeight > h) {
+      rowHeight = Math.max(MIN_HEIGHT, Math.floor(h / lines.length));
+      notes.push('字幕高度已收缩为 ' + rowHeight + 'px，以完整容纳 ' + lines.length + ' 行。');
+    }
+
+    var n = lines.length;
+    var y0 = Math.max(0, h - n * rowHeight); // 首行字幕条的 y 坐标
+
+    // 背景条：只裁切 y0 处的一条 w×H 条带，并只在离屏画布上压暗一次
+    var strip = document.createElement('canvas');
+    strip.width = w;
+    strip.height = rowHeight;
+    var sctx = strip.getContext('2d');
+    sctx.drawImage(img, 0, y0, w, rowHeight, 0, 0, w, rowHeight);
+    sctx.fillStyle = DARK_LAYER;
+    sctx.fillRect(0, 0, w, rowHeight);
+
+    // 预览与导出共用同一个 canvas，尺寸恒等于原像素尺寸（不做 devicePixelRatio 缩放）
+    els.canvas.width = w;
+    els.canvas.height = h;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // 同一条带复用到每一行，所有行背景完全一致
+    for (var i = 0; i < n; i++) {
+      ctx.drawImage(strip, 0, 0, w, rowHeight, 0, y0 + i * rowHeight, w, rowHeight);
+    }
+
+    // 分隔线：1px，贯穿全宽；行边界各一条，首行顶部也画一条
+    ctx.fillStyle = DIVIDER_COLOR;
+    for (var d = 1; d < n; d++) {
+      ctx.fillRect(0, y0 + d * rowHeight, w, 1);
+    }
+    ctx.fillRect(0, y0, w, 1);
+
+    var maxTextWidth = w > 24 ? w - 16 : w;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+
+    for (var j = 0; j < n; j++) {
+      var fitted = fitText(lines[j], fontSize, maxTextWidth, fontStack);
+      var cy = y0 + j * rowHeight + rowHeight / 2;
+      ctx.font = fitted.size + 'px ' + fontStack;
+      // 轮廓线宽按实际绘制字号计算，≈ max(2, 字号/8)
+      ctx.lineWidth = Math.max(2, fitted.size / 8);
+      ctx.strokeStyle = outlineColor;
+      ctx.strokeText(fitted.text, w / 2, cy);
+      ctx.fillStyle = fontColor;
+      ctx.fillText(fitted.text, w / 2, cy);
+    }
+
+    hasResult = true;
+    stale = false;
+    els.canvas.hidden = false;
+    els.placeholder.hidden = true;
+
+    var info = '已生成：' + w + '×' + h + '，' + n + ' 行。';
+    setHint(notes.length ? info + ' ' + notes.join(' ') : info);
+    updateButtons();
+  }
+
+  function saveImage() {
+    if (!hasResult || stale) {
+      setHint('请先生成字幕图片，再保存。');
+      return;
+    }
+    els.canvas.toBlob(function (blob) {
+      if (!blob) {
+        setHint('导出失败，请重试。');
+        return;
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = outputName();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // 触发下载后释放对象 URL，避免占用内存
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    }, 'image/png');
+  }
+
+  function markStale() {
+    if (hasResult) {
+      stale = true;
+      setHint('参数或文本已修改，请重新生成后再保存。');
+    }
+    updateButtons();
+  }
+
+  els.fileInput.addEventListener('change', function () {
+    var file = els.fileInput.files && els.fileInput.files[0];
+    if (!file) return;
+    if (!/^image\//.test(file.type)) {
+      setHint('请选择图片文件。');
+      els.fileInput.value = '';
+      return;
+    }
+
+    // 换图：先释放上一张图片的 Object URL 与引用，再清空预览回到“待生成”
+    releaseImage();
+    resetResult();
+
+    imageName = file.name;
+    els.fileName.textContent = file.name;
+    els.fileName.title = file.name;
+
+    var url = URL.createObjectURL(file);
+    var loaded = new Image();
+    loaded.onload = function () {
+      image = loaded;
+      imageUrl = url;
+      setHint('已选择图片（' + loaded.naturalWidth + '×' + loaded.naturalHeight + '），点击“生成字幕图片”。');
+      updateButtons();
+    };
+    loaded.onerror = function () {
+      URL.revokeObjectURL(url);
+      imageName = '';
+      els.fileName.textContent = '未选择文件';
+      els.fileName.title = '';
+      setHint('图片加载失败，请换一张试试。');
+      updateButtons();
+    };
+    loaded.src = url;
+  });
+
+  els.generate.addEventListener('click', function () {
+    generate().catch(function (err) {
+      setHint('生成失败：' + (err && err.message ? err.message : '未知错误'));
+    });
+  });
+  els.save.addEventListener('click', saveImage);
+
+  // 字体组合框：聚焦展开全量候选，输入即过滤，上下键切换，回车/失焦提交，Esc 收起并还原
+  els.fontInput.addEventListener('focus', function () {
+    els.fontInput.select();      // 聚焦全选，直接输入即可替换当前字体名开始搜索
+    renderFontList('');
+  });
+  els.fontInput.addEventListener('input', function () { renderFontList(els.fontInput.value); });
+  els.fontInput.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (els.fontList.hidden) renderFontList(els.fontInput.value);
+      else if (visibleFonts.length) highlightFont(activeIndex + 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!els.fontList.hidden && visibleFonts.length) highlightFont(activeIndex - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (!els.fontList.hidden && activeIndex >= 0 && visibleFonts[activeIndex]) {
+        commitFont(visibleFonts[activeIndex]);
+      } else {
+        commitCustomFont(els.fontInput.value);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeFontList();
+      els.fontInput.value = currentFont.name;
+    }
+  });
+  els.fontInput.addEventListener('blur', function () {
+    var text = els.fontInput.value.trim();
+    closeFontList();
+    if (!text || text.toLowerCase() === currentFont.name.toLowerCase()) {
+      els.fontInput.value = currentFont.name;
+      return;
+    }
+    // 失焦时把输入值当成字体名提交（无匹配则作为自定义 font-family）
+    commitCustomFont(text);
+  });
+  document.addEventListener('mousedown', function (e) {
+    if (!els.fontField.contains(e.target)) closeFontList();
+  });
+
+  [els.rowHeight, els.fontSize, els.fontColor, els.outlineColor, els.text].forEach(function (el) {
+    el.addEventListener('input', markStale);
+    el.addEventListener('change', markStale);
+  });
+
+  resetResult();
+})();
+</script>
+
+
+</body></html>
